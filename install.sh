@@ -1,136 +1,82 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---- Detect the target login user (who will run the kiosk) ----
+# --- Detect who we're installing for (login user) ---
 TARGET_USER="${SUDO_USER:-$USER}"
 TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
-echo "Installing for user: $TARGET_USER (home: $TARGET_HOME)"
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+FILES_DIR="$REPO_DIR/files"
 
-# ---- Packages ----
+echo "Installing KioskPi for user: $TARGET_USER (home: $TARGET_HOME)"
+echo "Using files from: $FILES_DIR"
+
+# --- Packages (Chromium only; Wayland friendly) ---
 sudo apt update
-sudo apt install -y chromium-browser unclutter xbindkeys
+sudo apt install -y chromium-browser || sudo apt install -y chromium
 
-# ---- Files/dirs ----
+# Try xbindkeys only if present (helps on X11; harmless on Wayland if missing)
+sudo apt install -y xbindkeys || true
+
+# --- Ensure config dirs exist ---
 mkdir -p "$TARGET_HOME/.config/systemd/user" "$TARGET_HOME/.config/autostart"
 
-# 1) Launcher: start-kiosk.sh
-tee "$TARGET_HOME/start-kiosk.sh" >/dev/null <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
+# --- Copy payload files into the user's home ---
+install -m 0755 "$FILES_DIR/start-kiosk.sh"      "$TARGET_HOME/start-kiosk.sh"
+install -m 0755 "$FILES_DIR/disable-kiosk.sh"    "$TARGET_HOME/disable-kiosk.sh"
+install -m 0644 "$FILES_DIR/kiosk.html"          "$TARGET_HOME/kiosk.html"
+install -m 0644 "$FILES_DIR/kiosk.service"       "$TARGET_HOME/.config/systemd/user/kiosk.service"
 
-# Disable flag (clears on reboot)
-FLAG="${XDG_RUNTIME_DIR:-/run/user/$UID}/kiosk.disabled"
-[ -e "$FLAG" ] && exit 0
-
-BROWSER="$(command -v chromium-browser || command -v chromium)"
-
-# Kill any existing Chromium
-pkill -f chromium-browser 2>/dev/null || true
-pkill -f '(^|/)chromium(\s|$)' 2>/dev/null || true
-sleep 0.5
-
-# Anti-blank + hide cursor (works under X11; harmless on Wayland)
-xset -dpms s off s noblank 2>/dev/null || true
-unclutter -idle 1 -root 2>/dev/null &
-
-# Launch kiosk (wrapper page)
-exec setsid "$BROWSER" \
-  --kiosk --start-fullscreen \
-  --noerrdialogs --disable-infobars --disable-session-crashed-bubble \
-  --no-first-run --disable-translate \
-  file://"$HOME"/kiosk.html \
-  >/dev/null 2>&1
-SH
-chmod +x "$TARGET_HOME/start-kiosk.sh"
-
-# 2) Wrapper page: kiosk.html (edit URL here if you like)
-tee "$TARGET_HOME/kiosk.html" >/dev/null <<'HTML'
-<!doctype html>
-<html lang="en"><meta charset="utf-8" />
-<title>Kiosk</title>
-<style>
-  html,body{margin:0;height:100%;background:#000;overflow:hidden}
-  iframe{width:100%;height:100%;border:0;display:block;background:#000}
-  ::-webkit-scrollbar{display:none}
-  body{cursor:default} body.hide-cursor{cursor:none}
-</style>
-<body>
-<script>
-  const URL_TO_LOAD = "https://ahola-infotv.azurewebsites.net/display/3";
-  const REFRESH_MS = 120000, HIDE_CURSOR_AFTER_MS = 2000;
-  const frame=document.createElement('iframe'); document.body.appendChild(frame);
-  function reload(){ const sep = URL_TO_LOAD.includes('?')?'&':'?'; frame.src = URL_TO_LOAD + sep + 't=' + Date.now(); }
-  reload(); setInterval(reload, REFRESH_MS);
-  let t; function arm(){ document.body.classList.remove('hide-cursor'); clearTimeout(t);
-    t=setTimeout(()=>document.body.classList.add('hide-cursor'),HIDE_CURSOR_AFTER_MS); }
-  ['mousemove','mousedown','touchstart','keydown'].forEach(e=>document.addEventListener(e,arm,{passive:true}));
-  arm();
-</script>
-</body></html>
-HTML
-
-# 3) Hotkey to disable kiosk until reboot: Shift+Alt+Enter
-tee "$TARGET_HOME/disable-kiosk.sh" >/dev/null <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-FLAG="${XDG_RUNTIME_DIR:-/run/user/$UID}/kiosk.disabled"
-mkdir -p "$(dirname "$FLAG")"; touch "$FLAG"
-systemctl --user stop kiosk.service 2>/dev/null || true
-systemctl --user mask --runtime kiosk.service 2>/dev/null || true
-systemctl --user reset-failed kiosk.service 2>/dev/null || true
-pkill -f chromium-browser 2>/dev/null || true
-pkill -f '(^|/)chromium(\s|$)' 2>/dev/null || true
-echo "Kiosk disabled until reboot."
-SH
-chmod +x "$TARGET_HOME/disable-kiosk.sh"
-
-tee "$TARGET_HOME/.xbindkeysrc" >/dev/null <<'RC'
-# Disable kiosk until reboot: Shift + Alt + Enter
-"bash -lc '$HOME/disable-kiosk.sh'"
-  Shift+Alt + Return
-RC
-
-tee "$TARGET_HOME/.config/autostart/xbindkeys.desktop" >/dev/null <<'DESK'
-[Desktop Entry]
-Type=Application
-Name=xbindkeys
-Exec=/usr/bin/xbindkeys
-X-GNOME-Autostart-enabled=true
-DESK
-
-# 4) User systemd service (reliable autostart on Bookworm)
-tee "$TARGET_HOME/.config/systemd/user/kiosk.service" >/dev/null <<'UNIT'
-[Unit]
-Description=Chromium Kiosk (User)
-Wants=graphical-session.target
-After=graphical-session.target
-ConditionPathExists=!%t/kiosk.disabled
-
-[Service]
-Type=simple
-ExecStart=%h/start-kiosk.sh
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=default.target
-UNIT
-
-# 5) Optional nightly reboot at 03:00
-if [ ! -f /etc/cron.d/kiosk-reboot ]; then
-  echo '0 3 * * * root /sbin/shutdown -r now' | sudo tee /etc/cron.d/kiosk-reboot >/dev/null
+# X11-only hotkey bits (won't hurt if unused)
+if command -v xbindkeys >/dev/null 2>&1; then
+  install -m 0644 "$FILES_DIR/.xbindkeysrc"        "$TARGET_HOME/.xbindkeysrc"
+  install -m 0644 "$FILES_DIR/xbindkeys.desktop"   "$TARGET_HOME/.config/autostart/xbindkeys.desktop"
 fi
 
-# 6) Ownership + enable linger + enable service
-sudo chown -R "$TARGET_USER:$TARGET_USER" "$TARGET_HOME/.config" \
-  "$TARGET_HOME/start-kiosk.sh" "$TARGET_HOME/disable-kiosk.sh" "$TARGET_HOME/kiosk.html"
+# Optional nightly reboot at 03:00
+if [ -f "$FILES_DIR/kiosk-reboot.cron" ] && [ ! -f /etc/cron.d/kiosk-reboot ]; then
+  sudo install -m 0644 "$FILES_DIR/kiosk-reboot.cron" /etc/cron.d/kiosk-reboot
+fi
 
+# --- Wayfire (Wayland) hotkey: Shift+Alt+Enter to disable kiosk ---
+# Adds/updates ~/.config/wayfire.ini to enable 'command' plugin and bind our script.
+WAYFIRE_INI="$TARGET_HOME/.config/wayfire.ini"
+if [ -f /etc/xdg/wayfire/wayfire.ini ]; then
+  mkdir -p "$TARGET_HOME/.config"
+  [ -f "$WAYFIRE_INI" ] || cp /etc/xdg/wayfire/wayfire.ini "$WAYFIRE_INI"
+
+  # Ensure 'command' plugin is listed under [core]
+  if grep -q '^\s*plugins\s*=' "$WAYFIRE_INI"; then
+    sed -i 's/^\(\s*plugins\s*=\s*.*\)\bcommand\b\{0,1\}\(.*\)$/\1 command\2/' "$WAYFIRE_INI"
+  else
+    printf '[core]\nplugins = command\n' >> "$WAYFIRE_INI"
+  fi
+
+  # Ensure [command] section exists
+  grep -q '^\[command\]' "$WAYFIRE_INI" || printf '\n[command]\n' >> "$WAYFIRE_INI"
+
+  # Append a binding for Shift+Alt+Enter -> disable-kiosk.sh
+  IDX=$(grep -Eo '^binding_[0-9]+' "$WAYFIRE_INI" | sed 's/binding_//' | sort -n | tail -1)
+  IDX=${IDX:-"-1"}; IDX=$((IDX+1))
+  printf 'binding_%d = <shift> <alt> KEY_ENTER\ncommand_%d = %s/disable-kiosk.sh\n' \
+    "$IDX" "$IDX" "$TARGET_HOME" >> "$WAYFIRE_INI"
+fi
+
+# --- Ownership fixes (very important) ---
+sudo chown -R "$TARGET_USER:$TARGET_USER" \
+  "$TARGET_HOME/start-kiosk.sh" \
+  "$TARGET_HOME/disable-kiosk.sh" \
+  "$TARGET_HOME/kiosk.html" \
+  "$TARGET_HOME/.config"
+
+# --- Enable user lingering & the kiosk service ---
 sudo loginctl enable-linger "$TARGET_USER"
-
 sudo -u "$TARGET_USER" systemctl --user daemon-reload
 sudo -u "$TARGET_USER" systemctl --user unmask kiosk.service 2>/dev/null || true
 sudo -u "$TARGET_USER" systemctl --user enable --now kiosk.service
 
-echo "✅ Install complete. If Chromium didn't pop up, check:"
-echo "   systemctl --user status kiosk.service"
-echo "   journalctl --user -u kiosk.service -e"
+echo
+echo "Install complete."
+echo "If Chromium didn't pop up yet, check:"
+echo "  systemctl --user status kiosk.service"
+echo "  journalctl --user -u kiosk.service -e"
+echo "Hotkey to disable kiosk (Wayland/Wayfire): Shift+Alt+Enter"
