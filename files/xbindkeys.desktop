@@ -1,5 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=xbindkeys
-Exec=/usr/bin/xbindkeys
-X-GNOME-Autostart-enabled=true
