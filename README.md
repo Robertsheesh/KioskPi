@@ -12,6 +12,7 @@ To change the URL:
 ## Install
 ```bash
 sudo apt update && sudo apt install -y git
-git clone https://github.com/robertsheesh/pi-kiosk.git
-cd pi-kiosk
-sudo ./install.sh
+git clone https://github.com/Robertsheesh/KioskPi
+cd KioskPi
+sudo bash install.sh
+sudo reboot
