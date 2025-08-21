@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8" />
+<title>Kiosk</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  iframe { width:100%; height:100%; border:0; display:block; background:#000; }
+  ::-webkit-scrollbar { display:none; }
+  body { cursor: default; }
+  body.hide-cursor { cursor: none; }
+</style>
+<body>
+<script>
+  const URL_TO_LOAD = "https://google.com";
+  const REFRESH_MS = 120000, HIDE_CURSOR_AFTER_MS = 2000;
+
+  const frame = document.createElement('iframe');
+  document.body.appendChild(frame);
+
+  function reloadIframe(){
+    const sep = URL_TO_LOAD.includes('?') ? '&' : '?';
+    frame.src = URL_TO_LOAD + sep + 't=' + Date.now();
+  }
+  reloadIframe(); setInterval(reloadIframe, REFRESH_MS);
+
+  let t;
+  function arm(){ document.body.classList.remove('hide-cursor'); clearTimeout(t);
+    t = setTimeout(()=>document.body.classList.add('hide-cursor'), HIDE_CURSOR_AFTER_MS); }
+  ['mousemove','mousedown','touchstart','keydown'].forEach(e =>
+    document.addEventListener(e, arm, {passive:true}));
+  arm();
+</script>
+</body>
+</html>

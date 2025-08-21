@@ -1,0 +1,15 @@
+[Unit]
+Description=Chromium Kiosk (User)
+Wants=graphical-session.target
+After=graphical-session.target
+# Don't start if disable flag exists for this boot
+ConditionPathExists=!%t/kiosk.disabled
+
+[Service]
+Type=simple
+ExecStart=%h/start-kiosk.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
