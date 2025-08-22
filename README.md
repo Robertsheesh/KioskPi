@@ -5,7 +5,7 @@
   </a>
 </div>
 
-# pi-kiosk
+# KioskPi
 
 Chromium kiosk for Raspberry Pi OS Desktop/Lite.
 - Fullscreen Chromium
@@ -13,12 +13,14 @@ Chromium kiosk for Raspberry Pi OS Desktop/Lite.
 - Shift+Alt+Enter to disable kiosk until reboot
 - Nightly reboot at 03:00
 
+## Install
+1. Install Raspberry Pi OS Desktop on to your Raspberry Pi.
+2. Open Terminal
+3. Type "sudo apt update && sudo apt install -y git"
+4. Type "git clone https://github.com/Robertsheesh/KioskPi"
+5. Change directory to KioskPi "cd KioskPi"
+6. Install the script "sudo bash install.sh"
+7. Reboot the device "sudo reboot".
+   
 To change the URL:
 - Edit ~/kiosk.html "const URL_TO_LOAD = "https://your_url.com/display1";"
-
-## Install
-```bash
-sudo apt update && sudo apt install -y git
-git clone https://github.com/<you>/pi-kiosk.git
-cd pi-kiosk
-sudo ./install.sh
