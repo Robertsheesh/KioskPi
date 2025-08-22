@@ -1,7 +1,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/Robertsheesh/KioskPi">
-    <img src="logo.png" alt="Logo" width="200" height="200">
+    <img src="KioskPi_logo.png" alt="Logo" width="200" height="200">
   </a>
 </div>
 
