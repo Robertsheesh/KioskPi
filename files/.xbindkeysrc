@@ -1,3 +1,0 @@
-# Disable kiosk until reboot: Shift + Alt + Enter
-"bash -lc '$HOME/disable-kiosk.sh'"
-  Shift+Alt + Return

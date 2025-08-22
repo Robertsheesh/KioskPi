@@ -1,2 +1,0 @@
-# Reboot nightly at 03:00
-0 3 * * * root /sbin/shutdown -r now
