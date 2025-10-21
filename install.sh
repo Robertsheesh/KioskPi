@@ -34,7 +34,7 @@ cat > "$TARGET_HOME/kiosk.html" <<'HTML'
 <body>
 <script>
   // >>> CHANGE THIS if you need a different page:
-  const URL_TO_LOAD = "https://ahola-infotv.azurewebsites.net/display/3";
+  const URL_TO_LOAD = "https://www.youtube.com/";
   const REFRESH_MS = 120000, HIDE_CURSOR_AFTER_MS = 2000;
 
   const frame=document.createElement('iframe'); document.body.appendChild(frame);
